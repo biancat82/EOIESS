@@ -1,0 +1,34 @@
+import pandas as pd
+from geopy.geocoders import Nominatim
+
+# Read the CSV file
+data = pd.read_csv('/Users/jacopobiancat/OneDrive - Istituto Europeo di Studi Superiori/Astro-PI-22_23/EO_IESS/data.csv')
+
+# Initialize geocoder
+geolocator = Nominatim(user_agent='my_app')
+
+# Initialize empty list to store countries
+countries = []
+
+# Loop through the data
+for index, row in data.iterrows():
+    latitude = row['Latitude']
+    longitude = row['Longitude']
+
+    # Reverse geocode to get the country
+    location = geolocator.reverse((latitude, longitude), exactly_one=True)
+    if location == None:
+        country = 'Unknown'
+    else:
+        country = location.raw['address'].get('country')
+        country = country.encode('utf-8').decode('utf-8')
+
+    print(country)
+    # Append the country to the list
+    countries.append(country)
+
+# Add the countries as a new column in the dataframe
+data['Country'] = countries
+
+# Save the updated dataframe to a new CSV file
+data.to_csv('data_with_countries2.csv', index=False)
