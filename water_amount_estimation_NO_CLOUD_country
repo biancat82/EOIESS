@@ -1,0 +1,114 @@
+import os
+import cv2
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from geopy.geocoders import Nominatim
+
+def contrast_stretch(im):
+    in_min = np.percentile(im, 5)
+    in_max = np.percentile(im, 95)
+
+    out_min = 0.0
+    out_max = 255.0
+
+    out = im - in_min
+    denominator = (in_min - in_max)
+    denominator = np.where(denominator == 0, 0.01, denominator)
+    out *= ((out_min - out_max) / (denominator))
+    out += in_min
+
+    return out
+
+def calculate_water_index(binary_image, cloud_mask):
+    total_pixels = binary_image.size
+    water_image = np.where(cloud_mask == 255, binary_image, 255)
+    water_pixels = np.count_nonzero(water_image == 0)
+
+    water_index = water_pixels / total_pixels
+    print(water_index)
+
+    return water_index
+
+# Directory path containing NIR images
+directory = '/Users/jacopobiancat/OneDrive - Istituto Europeo di Studi Superiori/Astro-PI-22_23/EO_IESS'
+
+# Path to the CSV file containing latitude and longitude information
+csv_file = '/Users/jacopobiancat/Documents/Scuola/Astro-PI-22-23/data_with_countries_correct.csv'
+
+# Initialize geocoder
+geolocator = Nominatim(user_agent='my_app')
+
+# Read the CSV file
+data = pd.read_csv(csv_file)
+
+# Initialize lists to store water indices and country names
+water_indices = []
+countries = data['Country']
+Sunlit = data['Sunlit']
+
+# Loop through each file in the directory
+for file in sorted(os.listdir(directory)):
+    if file.endswith('.jpg'):
+        print(file)
+        # Read the NIR image
+        image_path = os.path.join(directory, file)
+        nir_image = cv2.imread(image_path)
+        orignal_4_cloud_removal = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        contrasted = contrast_stretch(nir_image)
+
+        # Apply adaptive thresholding to segment potential cloud pixels
+        _, thresholded_image = cv2.threshold(orignal_4_cloud_removal, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Convert the thresholded image to binary format
+        cloud_mask = np.where(thresholded_image > 0, 0, 255).astype(np.uint8)
+
+        # Estrai il canale blu nell'immagine
+        blue_channel = contrasted[:,:,0]
+
+        threshold_value = 75  # Regola questo valore in base alle tue immagini
+        ret, binary_image = cv2.threshold(blue_channel, threshold_value, 255, cv2.THRESH_BINARY)
+        # Opzionale: applica operazioni morfologiche per pulire l'immagine binaria
+        kernel = np.ones((5, 5), np.uint8)
+        binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel)
+        
+        water_index = calculate_water_index(binary_image, cloud_mask)
+
+        # Append the NDWI to the list
+        water_indices.append(water_index)
+
+# Create a dataframe with the water indices and country names
+df = pd.DataFrame({'Country': countries, 'Water Index': water_indices, 'Sunlit': Sunlit})
+
+# Calculate the average water index per country
+average_cloud_index = df.groupby('Country')['Water Index'].mean()
+
+# Filter the dataframe to include only rows where Sunlit = 1
+filtered_df = df[df['Sunlit'] == 1]
+
+# Calculate the average water index per country for the filtered dataframe
+average_water_index_filtered = filtered_df.groupby('Country')['Water Index'].mean()
+
+# Plot the average water index per country
+plt.figure(figsize=(10, 6))
+average_cloud_index.plot(kind='bar', edgecolor='black', alpha=0.7)
+plt.xlabel('Country')
+plt.ylabel('Average Water Index')
+plt.title('Average Water Index per Country')
+plt.tight_layout()
+plt.show()
+
+# Plot the average water index per country
+plt.figure(figsize=(10, 6))
+average_water_index_filtered.plot(kind='bar', edgecolor='black', alpha=0.7)
+plt.xlabel('Country')
+plt.ylabel('Average Water Index')
+plt.title('Average Water Index per Country with Sunlit = 1')
+plt.tight_layout()
+plt.show()
+
+# Add the WaterIndex as a new column in the dataframe
+data['WaterQuantity'] = water_indices
+
+# Save the updated dataframe to a new CSV file
+data.to_csv('data_with_waterindex.csv', index=False)
