@@ -1,0 +1,87 @@
+import cv2
+import numpy as np
+from fastiecm import fastiecm
+
+def display(image, image_name):
+    image = np.array(image, dtype=float)/float(255)
+    shape = image.shape
+    height = int(shape[0] / 2)
+    width = int(shape[1] / 2)
+    image = cv2.resize(image, (width, height))
+    cv2.namedWindow(image_name)
+    cv2.imshow(image_name, image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+def contrast_stretch(im):
+    in_min = np.percentile(im, 5)
+    in_max = np.percentile(im, 95)
+
+    out_min = 0.0
+    out_max = 255.0
+
+    out = im - in_min
+    denominator = (in_min - in_max)
+    denominator = np.where(denominator == 0, 0.01, denominator)
+    out *= ((out_min - out_max) / (denominator))
+    out += in_min
+
+    return out
+
+#filename = '/Users/jacopobiancat/OneDrive - Istituto Europeo di Studi Superiori/Astro-PI-22_23/EO_IESS/photo_194.jpg'
+#filename = '/Users/jacopobiancat/OneDrive - Istituto Europeo di Studi Superiori/Astro-PI-22_23/EO_IESS/photo_573.jpg'
+filename = '/Users/jacopobiancat/OneDrive - Istituto Europeo di Studi Superiori/Astro-PI-22_23/EO_IESS/photo_336.jpg'
+
+original = cv2.imread(filename)
+orignal_4_cloud_removal = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+
+display(original, 'Original')
+contrasted = contrast_stretch(original)
+display(contrasted, 'Contrasted original')
+cv2.imwrite('contrasted.png', contrasted)
+
+# Apply adaptive thresholding to segment potential cloud pixels
+_, thresholded_image = cv2.threshold(orignal_4_cloud_removal, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+# Convert the thresholded image to binary format
+cloud_mask = np.where(thresholded_image > 0, 0, 255).astype(np.uint8)
+
+# Perform morphological operations to refine the cloud mask
+kernel = np.ones((3, 3), np.uint8)
+cloud_mask = cv2.morphologyEx(cloud_mask, cv2.MORPH_OPEN, kernel)
+
+# Estrai il canale blu nell'immagine
+blue_channel = contrasted[:,:,0]
+
+# Applica una soglia per identificare le aree scure (presenza di acqua)
+threshold_value = 75  # Regola questo valore in base alle tue immagini
+ret, binary_image = cv2.threshold(blue_channel, threshold_value, 255, cv2.THRESH_BINARY)
+
+# Opzionale: applica operazioni morfologiche per pulire l'immagine binaria
+kernel = np.ones((5, 5), np.uint8)
+binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel)
+
+# Compute water quantity excluding cloud pixels
+water_image = np.where(cloud_mask == 255, binary_image, 255)
+
+# Mostra l'immagine binaria risultante
+cv2.imwrite('cloud_mask.png', cloud_mask)
+cv2.imshow('Cloud mask', cloud_mask)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+# Mostra l'immagine binaria risultante
+cv2.imwrite('binary_image.png', binary_image)
+cv2.imshow('Binary Image', binary_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+# Display the water image
+cv2.imwrite('water_image.png', water_image)
+cv2.imshow('Water Image', water_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+
+
+
